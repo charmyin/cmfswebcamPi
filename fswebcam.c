@@ -651,7 +651,7 @@ int fswc_grab(fswebcam_config_t *config)
 				char imgScaleName[50];
 				bzero(imgName, 50);
 				bzero(imgScaleName, 50);
-				strcat(imgName, "/mnt/toshibausb/img");
+				strcat(imgName, config->save);
 				//strcat(imgName, "img");
 				strcat(imgName, countImageStr);
 				strcat(imgName, ".jpg");
