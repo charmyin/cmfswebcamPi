@@ -170,7 +170,8 @@ typedef struct {
 	/* Overlay options. */
 	char *underlay;
 	char *overlay;
-	
+	/*Save path : /home/cubie/hello/*/
+	char *save;
 	/* Output options. */
 	char *filename;
 	char format;
@@ -1244,6 +1245,10 @@ int fswc_getopts(fswebcam_config_t *config, int argc, char *argv[])
 		case OPT_DUMPFRAME:
 			free(config->dumpframe);
 			config->dumpframe = strdup(optarg);
+			break;
+		case OPT_SAVE:
+			free(config->save);
+			config->save = strdup(optarg);
 			break;
 		default:
 			/* All other options are added to the job queue. */
