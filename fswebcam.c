@@ -495,7 +495,7 @@ int fswc_output(fswebcam_config_t *config, char *name, gdImage *image)
 	/* Write the compressed image. */
 	MSG("Writing JPEG image to '%s'.", filename);
 	gdImageJpeg(im, f, config->compression);
-	break;
+	//break;
 
 	if(f != stdout) fclose(f);
 	
