@@ -39,3 +39,4 @@ int fswc_add_image_png(src_t *src, avgbmp_t *abitmap)
 	return(0);
 }
 
+ 

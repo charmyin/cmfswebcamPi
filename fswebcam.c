@@ -148,8 +148,8 @@ typedef struct {
 	char *dumpframe;
 	
 	/* Job queue. */
-	//uint8_t jobs;
-	//fswebcam_job_t **job;
+	uint8_t jobs;
+	fswebcam_job_t **job;
 	
 	/* Banner options. */
 	char banner;
@@ -568,47 +568,19 @@ int fswc_grab(fswebcam_config_t *config)
 			src.fps        = config->fps;
 			src.option     = config->option;
 
-			HEAD("--- Opening %s...", deviceName);
-
+			HEAD("--- Opening %s...%s", deviceName, config->device);
+			printf("--- Opening %s...%s", deviceName, config->device);
 			if(src_open(&src, deviceName) == -1) return(-1);
-
-			if(src_open(&src, config->device) == -1) return(-1);
-
+			//if(src_open(&src, config->device) == -1) return(-1);
 			/* The source may have adjusted the width and height we passed
 			 * to it. Update the main config to match. */
-			config->width  = src.width;
-			config->height = src.height;
-		
-			/* Set the default values for this run. */
-			if(config->font) free(config->font);
-			if(config->title) free(config->title);
-			if(config->subtitle) free(config->subtitle);
-			if(config->timestamp) free(config->timestamp);
-			if(config->info) free(config->info);
-			if(config->underlay) free(config->underlay);
-			if(config->overlay) free(config->overlay);
-			if(config->filename) free(config->filename);
-
-			config->banner       = BOTTOM_BANNER;
-			config->bg_colour    = 0x40263A93;
-			config->bl_colour    = 0x00FF0000;
-			config->fg_colour    = 0x00FFFFFF;
-			config->font         = strdup("sans");
-			config->fontsize     = 10;
-			config->shadow       = 1;
-			config->title        = strdup("dapeng");
-			config->subtitle     = strdup("001");
-			config->timestamp    = strdup("%Y-%m-%d %H:%M:%S (%Z)");
-			config->info         = strdup("yes it's ok");;
-			config->underlay     = NULL;
-			config->overlay      = NULL;
-			config->filename     = NULL;
-			config->format       = FORMAT_JPEG;
-			config->compression  = -1;
 
 			//
 			char countImageStr[20];
 			while(1){
+				if(countImages==3){
+					return;
+				}
 				countImages++;
 				/* Record the start time. */
 				config->start = time(NULL);
@@ -635,6 +607,7 @@ int fswc_grab(fswebcam_config_t *config)
 
 				/* Copy the average bitmap image to a gdImage. */
 				original = gdImageCreateTrueColor(config->width, config->height);
+				printf("height is %d, width is %d------\n", config->height, config->width);
 				if(!original)
 				{
 					ERROR("Out of memory.");
@@ -670,17 +643,15 @@ int fswc_grab(fswebcam_config_t *config)
 
 				/* Run through the jobs list. */
 
-				MSG("Setting output format to JPEG, quality %i", 90);
-				config->format = FORMAT_JPEG;
-				config->compression = 90;
 
 				snprintf(countImageStr, 20, "%d", countImages);
-				//printf("countImageStr = %s\n", countImageStr);
+				printf("countImageStr = %s\n", countImageStr);
 				//Generate the imgName
-				char imgName[30];
-				char imgScaleName[30];
-				bzero(imgName, 30);
-				bzero(imgScaleName, 30);
+				char imgName[50];
+				char imgScaleName[50];
+				bzero(imgName, 50);
+				bzero(imgScaleName, 50);
+				//strcat(imgName, "/mnt/toshibausb/img");
 				strcat(imgName, "img");
 				strcat(imgName, countImageStr);
 				strcat(imgName, ".jpg");
@@ -689,9 +660,8 @@ int fswc_grab(fswebcam_config_t *config)
 				strcat(imgScaleName, ".jpg");
 				//rotate the image
 				//image = fx_rotate(image, "180");
-				sleep(3);
+				sleep(1);
 				//save file, and scale
-				//printf("++++++++++++config->job[x]->options %s\n", config->job[x]->options );
 				fswc_output(config, imgName, image);
 				//image = fx_scale(image, "256x192");
 				//fswc_output(config, imgScaleName, image);
@@ -906,10 +876,215 @@ int fswc_getopt_file(fswc_getopt_t *s)
 	return(-2);
 }
 
+int fswc_getopt(fswc_getopt_t *s, int argc, char *argv[])
+{
+	int c;
 
+	/* If a conf file is opened, read from that. */
+	if(s->f)
+	{
+		/* Read until we find an argument, error or EOF. */
+		c = fswc_getopt_file(s);
+
+		if(c < 0)
+		{
+			/* EOF or error. */
+			fclose(s->f);
+			s->f = NULL;
+
+			if(c == -2) return('!');
+		}
+		else return(c);
+	}
+
+	/* Read from the command line. */
+	c = getopt_long(argc, argv, s->opts, s->long_opts, &s->opt_index);
+
+	return(c);
+}
+
+int fswc_add_job(fswebcam_config_t *config, uint16_t id, char *options)
+{
+	fswebcam_job_t *job;
+	void *n;
+
+	job = malloc(sizeof(fswebcam_job_t));
+	if(!job)
+	{
+		ERROR("Out of memory.");
+		return(-1);
+	}
+
+	job->id = id;
+	if(options) job->options = strdup(options);
+	else job->options = NULL;
+
+	/* Increase the size of the job queue. */
+	n = realloc(config->job, sizeof(fswebcam_job_t *) * (config->jobs + 1));
+	if(!n)
+	{
+		ERROR("Out of memory.");
+
+		if(job->options) free(job->options);
+		free(job);
+
+		return(-1);
+	}
+
+	config->job = n;
+
+	/* Add the new job to the queue. */
+	config->job[config->jobs++] = job;
+
+	return(0);
+}
+
+int fswc_usage()
+{
+	printf("Usage: fswebcam [<options>] <filename> [[<options>] <filename> ... ]\n"
+	       "\n"
+	       " Options:\n"
+	       "\n"
+	       " -?, --help                   Display this help page and exit.\n"
+	       " -c, --config <filename>      Load configuration from file.\n"
+	       " -q, --quiet                  Hides all messages except for errors.\n"
+	       " -v, --verbose                Displays extra messages while capturing\n"
+	       "     --version                Displays the version and exits.\n"
+	       " -l, --loop <seconds>         Run in loop mode.\n"
+	       " -b, --background             Run in the background.\n"
+	       " -o, --output <filename>      Output the log to a file.\n"
+	       " -d, --device <name>          Sets the source to use.\n"
+	       " -i, --input <number/name>    Selects the input to use.\n"
+	       " -t, --tuner <number>         Selects the tuner to use.\n"
+	       " -f, --frequency <number>     Selects the frequency use.\n"
+	       " -p, --palette <name>         Selects the palette format to use.\n"
+	       " -D, --delay <number>         Sets the pre-capture delay time. (seconds)\n"
+	       " -r, --resolution <size>      Sets the capture resolution, eg. 1024x768 \n"
+	       "     --fps <framerate>        Sets the capture frame rate.\n"
+	       " -F, --frames <number>        Sets the number of frames to capture.\n"
+	       " -S, --skip <number>          Sets the number of frames to skip.\n"
+	       "     --dumpframe <filename>   Dump a raw frame to file.\n"
+	       " -s, --set <name>=<value>     Sets a control value.\n"
+	       "     --revert                 Restores original captured image.\n"
+	       "     --flip <direction>       Flips the image. (h, v)\n"
+	       "     --crop <size>[,<offset>] Crop a part of the image.\n"
+	       "     --scale <size>           Scales the image.\n"
+	       "     --rotate <angle>         Rotates the image in right angles.\n"
+	       "     --deinterlace            Reduces interlace artifacts.\n"
+	       "     --invert                 Inverts the images colours.\n"
+	       "     --greyscale              Removes colour from the image.\n"
+	       "     --swapchannels <c1c2>    Swap channels c1 and c2.\n"
+	       "     --no-banner              Hides the banner.\n"
+	       "     --top-banner             Puts the banner at the top.\n"
+	       "     --bottom-banner          Puts the banner at the bottom. (Default)\n"
+	       "     --banner-colour <colour> Sets the banner colour. (#AARRGGBB)\n"
+	       "     --line-colour <colour>   Sets the banner line colour.\n"
+	       "     --text-colour <colour>   Sets the text colour.\n"
+	       "     --font <[name][:size]>   Sets the font and/or size.\n"
+	       "     --no-shadow              Disables the text shadow.\n"
+	       "     --shadow                 Enables the text shadow.\n"
+	       "     --title <text>           Sets the main title. (top left)\n"
+	       "     --no-title               Clears the main title.\n"
+	       "     --subtitle <text>        Sets the sub-title. (bottom left)\n"
+	       "     --no-subtitle            Clears the sub-title.\n"
+	       "     --timestamp <format>     Sets the timestamp format. (top right)\n"
+	       "     --no-timestamp           Clears the timestamp.\n"
+	       "     --gmt                    Use GMT instead of local timezone.\n"
+	       "     --info <text>            Sets the info text. (bottom right)\n"
+	       "     --no-info                Clears the info text.\n"
+	       "     --underlay <PNG image>   Sets the underlay image.\n"
+	       "     --no-underlay            Clears the underlay.\n"
+	       "     --overlay <PNG image>    Sets the overlay image.\n"
+	       "     --no-overlay             Clears the overlay.\n"
+	       "     --jpeg <factor>          Outputs a JPEG image. (-1, 0 - 95)\n"
+	       "     --png <factor>           Outputs a PNG image. (-1, 0 - 10)\n"
+	       "     --save <filename>        Save image to file.\n"
+	       "     --exec <command>         Execute a command and wait for it to complete.\n"
+	       "\n");
+
+	return(0);
+}
 
 int fswc_getopts(fswebcam_config_t *config, int argc, char *argv[])
 {
+	int c;
+		fswc_getopt_t s;
+		static struct option long_opts[] =
+		{
+			{"help",            no_argument,       0, '?'},
+			{"config",          required_argument, 0, 'c'},
+			{"quiet",           no_argument,       0, 'q'},
+			{"verbose",         no_argument,       0, 'v'},
+			{"version",         no_argument,       0, OPT_VERSION},
+			{"loop",            required_argument, 0, 'l'},
+			{"offset",          required_argument, 0, OPT_OFFSET},
+			{"background",      no_argument,       0, 'b'},
+			{"pid",             required_argument, 0, OPT_PID},
+			{"log",             required_argument, 0, 'L'},
+			{"device",          required_argument, 0, 'd'},
+			{"input",           required_argument, 0, 'i'},
+			{"list-inputs",     no_argument,       0, OPT_LIST_INPUTS},
+			{"tuner",           required_argument, 0, 't'},
+			{"list-tuners",     no_argument,       0, OPT_LIST_TUNERS},
+			{"frequency",       required_argument, 0, 'f'},
+			{"delay",           required_argument, 0, 'D'},
+			{"resolution",      required_argument, 0, 'r'},
+			{"fps",	            required_argument, 0, OPT_FPS},
+			{"list-framesizes", no_argument,       0, OPT_LIST_FRAMESIZES},
+			{"list-framerates", no_argument,       0, OPT_LIST_FRAMERATES},
+			{"frames",          required_argument, 0, 'F'},
+			{"skip",            required_argument, 0, 'S'},
+			{"palette",         required_argument, 0, 'p'},
+			{"dumpframe",       required_argument, 0, OPT_DUMPFRAME},
+			{"read",            no_argument,       0, 'R'},
+			{"list-formats",    no_argument,       0, OPT_LIST_FORMATS},
+			{"set",             required_argument, 0, 's'},
+			{"list-controls",   no_argument,       0, OPT_LIST_CONTROLS},
+			{"revert",          no_argument,       0, OPT_REVERT},
+			{"flip",            required_argument, 0, OPT_FLIP},
+			{"crop",            required_argument, 0, OPT_CROP},
+			{"scale",           required_argument, 0, OPT_SCALE},
+			{"rotate",          required_argument, 0, OPT_ROTATE},
+			{"deinterlace",     no_argument,       0, OPT_DEINTERLACE},
+			{"invert",          no_argument,       0, OPT_INVERT},
+			{"greyscale",       no_argument,       0, OPT_GREYSCALE},
+			{"swapchannels",    required_argument, 0, OPT_SWAPCHANNELS},
+			{"no-banner",       no_argument,       0, OPT_NO_BANNER},
+			{"top-banner",      no_argument,       0, OPT_TOP_BANNER},
+			{"bottom-banner",   no_argument,       0, OPT_BOTTOM_BANNER},
+			{"banner-colour",   required_argument, 0, OPT_BG_COLOUR},
+			{"line-colour",     required_argument, 0, OPT_BL_COLOUR},
+			{"text-colour",     required_argument, 0, OPT_FG_COLOUR},
+			{"font",            required_argument, 0, OPT_FONT},
+			{"no-shadow",       no_argument,       0, OPT_NO_SHADOW},
+			{"shadow",          no_argument,       0, OPT_SHADOW},
+			{"title",           required_argument, 0, OPT_TITLE},
+			{"no-title",        no_argument,       0, OPT_NO_TITLE},
+			{"subtitle",        required_argument, 0, OPT_SUBTITLE},
+			{"no-subtitle",     no_argument,       0, OPT_NO_SUBTITLE},
+			{"timestamp",       required_argument, 0, OPT_TIMESTAMP},
+			{"no-timestamp",    no_argument,       0, OPT_NO_TIMESTAMP},
+			{"gmt",             no_argument,       0, OPT_GMT},
+			{"info",            required_argument, 0, OPT_INFO},
+			{"no-info",         no_argument,       0, OPT_NO_INFO},
+			{"underlay",        required_argument, 0, OPT_UNDERLAY},
+			{"no-underlay",     no_argument,       0, OPT_NO_UNDERLAY},
+			{"overlay",         required_argument, 0, OPT_OVERLAY},
+			{"no-overlay",      no_argument,       0, OPT_NO_OVERLAY},
+			{"jpeg",            required_argument, 0, OPT_JPEG},
+			{"png",             required_argument, 0, OPT_PNG},
+			{"save",            required_argument, 0, OPT_SAVE},
+			{"exec",            required_argument, 0, OPT_EXEC},
+			{0, 0, 0, 0}
+		};
+		char *opts = "-qc:vl:bL:d:i:t:f:D:r:F:s:S:p:R";
+
+		s.opts      = opts;
+		s.long_opts = long_opts;
+		s.opt_index = 0;
+		s.filename  = NULL;
+		s.f         = NULL;
+		s.line      = 0;
 	
 	/* Set the defaults. */
 	config->loop = 0;
@@ -926,8 +1101,8 @@ int fswc_getopts(fswebcam_config_t *config, int argc, char *argv[])
 	config->delay = 0;
 	config->use_read = 0;
 	config->list = 0;
-	config->width = 1024;
-	config->height = 768;
+	config->width = 1280;
+	config->height = 720;
 	config->fps = 0;
 	config->frames = 1;
 	config->skipframes = 0;
@@ -943,6 +1118,152 @@ int fswc_getopts(fswebcam_config_t *config, int argc, char *argv[])
 	/* Reset getopt to ensure parsing begins at the first argument. */
 	optind = 0;
 	
+	/* Parse the command line and any config files. */
+	while((c = fswc_getopt(&s, argc, argv)) != -1)
+	{
+		printf("%c, %d\n", c, c);
+		switch(c)
+		{
+		case '?': fswc_usage(); /* Command line error. */
+		case '!': return(-1);   /* Conf file error. */
+		case 'c':
+			INFO("Reading configuration from '%s'...", optarg);
+			s.f = fopen(optarg, "rt");
+			if(!s.f)
+			{
+				ERROR("fopen: %s", strerror(errno));
+				return(-1);
+			}
+			s.line = 0;
+			free(s.filename);
+			s.filename = strdup(optarg);
+			break;
+		case OPT_VERSION:
+			fprintf(stderr, "fswebcam %s\n", PACKAGE_VERSION);
+			return(-1);
+		case 'q':
+			log_quiet(-1);
+			log_verbose(0);
+			break;
+		case 'v':
+			log_quiet(0);
+			log_verbose(-1);
+			break;
+		case 'l':
+			config->loop = atol(optarg);
+			break;
+		case OPT_OFFSET:
+			config->offset = atol(optarg);
+			break;
+		case 'b':
+			config->background = -1;
+			break;
+		case OPT_PID:
+			if(config->pidfile) free(config->pidfile);
+			config->pidfile = strdup(optarg);
+			break;
+		case 'L':
+			if(config->logfile) free(config->logfile);
+			config->logfile = strdup(optarg);
+			break;
+		case 'd':
+			if(config->device) free(config->device);
+			config->device = strdup(optarg);
+			break;
+		case 'i':
+			if(config->input) free(config->input);
+			config->input = strdup(optarg);
+			break;
+		case OPT_LIST_INPUTS:
+			config->list |= SRC_LIST_INPUTS;
+			break;
+		case 't':
+			config->tuner = atoi(optarg);
+			break;
+		case OPT_LIST_TUNERS:
+			config->list |= SRC_LIST_TUNERS;
+			break;
+		case 'f':
+			config->frequency = atof(optarg) * 1000;
+			break;
+		case 'D':
+			config->delay = atoi(optarg);
+			break;
+		case 'r':
+			config->width  = argtol(optarg, "x ", 0, 0, 10);
+			config->height = argtol(optarg, "x ", 1, 0, 10);
+			break;
+		case OPT_FPS:
+			config->fps = atoi(optarg);
+			break;
+		case OPT_SUBTITLE:
+			if(config->subtitle) free(config->subtitle);
+			config->subtitle = strdup(optarg);
+			break;
+		case OPT_TITLE:
+			if(config->title) free(config->title);
+			config->title = strdup(optarg);
+			break;
+		case 'F':
+			config->frames = atoi(optarg);
+			break;
+		case OPT_INFO:
+			if(config->info) free(config->info);
+			config->info = strdup(optarg);
+			break;
+		case 'S':
+			config->skipframes = atoi(optarg);
+			break;
+		case 's':
+			fswc_set_option(config, optarg);
+			break;
+		case OPT_LIST_CONTROLS:
+			config->list |= SRC_LIST_CONTROLS;
+			break;
+		case 'p':
+			config->palette = fswc_find_palette(optarg);
+			if(config->palette == -1) return(-1);
+			break;
+		case 'R':
+			config->use_read = -1;
+			break;
+		case OPT_LIST_FORMATS:
+			config->list |= SRC_LIST_FORMATS;
+			break;
+		case OPT_GMT:
+			config->gmt = -1;
+			break;
+		case OPT_DUMPFRAME:
+			free(config->dumpframe);
+			config->dumpframe = strdup(optarg);
+			break;
+		default:
+			/* All other options are added to the job queue. */
+			fswc_add_job(config, c, optarg);
+			break;
+		}
+	}
+
+	/* Do a sanity check on the options. */
+	if(config->frequency < 0)       config->frequency = 0;
+	if(config->width < 1)           config->width = 1;
+	if(config->height < 1)          config->height = 1;
+	if(config->frames < 1)          config->frames = 1;
+	if(config->frames > MAX_FRAMES)
+	{
+		WARN("Requested %u frames, maximum is %u. Using that.",
+		   config->frames, MAX_FRAMES);
+
+		config->frames = MAX_FRAMES;
+	}
+
+	/* Correct offset if negative or out of range. */
+	if(config->offset && (config->offset %= (signed long) config->loop) < 0)
+		config->offset += config->loop;
+
+	/* Free the config filename if set. */
+	free(s.filename);
+
 	return(0);
 }
 
@@ -954,7 +1275,7 @@ int fswc_free_config(fswebcam_config_t *config)
 	free(config->input);
 	
 	free(config->dumpframe);
-        free(config->title);
+    free(config->title);
 	free(config->subtitle);
 	free(config->timestamp);
 	free(config->info);
@@ -979,11 +1300,46 @@ int main(int argc, char *argv[])
 
 	/* Prepare the configuration structure. */
 	config = calloc(sizeof(fswebcam_config_t), 1);
+
 	if(!config)
 	{
 		WARN("Out of memory.");
 		return(-1);
 	}
+
+
+//	config->width  = src.width;
+//	config->height = src.height;
+	/* Set the default values for this run. */
+	if(config->font) free(config->font);
+	if(config->title) free(config->title);
+	if(config->subtitle) free(config->subtitle);
+	if(config->timestamp) free(config->timestamp);
+	if(config->info) free(config->info);
+	if(config->underlay) free(config->underlay);
+	if(config->overlay) free(config->overlay);
+	if(config->filename) free(config->filename);
+
+	config->banner       = BOTTOM_BANNER;
+	config->bg_colour    = 0x40263A93;
+	config->bl_colour    = 0x00FF0000;
+	config->fg_colour    = 0x00FFFFFF;
+	config->font         = strdup("sans");
+	config->fontsize     = 10;
+	config->shadow       = 1;
+	config->title        = strdup("NicePhoto");
+	config->subtitle     = strdup("By Charmyin");
+	config->timestamp    = strdup("%Y-%m-%d %H:%M:%S (%Z)");
+	config->info         = strdup("Charmyin Photo");;
+	config->underlay     = NULL;
+	config->overlay      = NULL;
+	config->filename     = NULL;
+	config->format       = FORMAT_JPEG;
+	config->compression  = -1;
+
+	MSG("Setting output format to JPEG, quality %i", 90);
+	config->format = FORMAT_JPEG;
+	config->compression = 90;
 
 	/* Set defaults and parse the command line. */
 	if(fswc_getopts(config, argc, argv)) return(-1);

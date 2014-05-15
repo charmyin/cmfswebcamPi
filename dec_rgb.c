@@ -132,3 +132,4 @@ int fswc_add_image_rgb555(src_t *src, avgbmp_t *abitmap)
 	return(0);
 }
 
+ 
