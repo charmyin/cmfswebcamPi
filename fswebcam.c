@@ -42,6 +42,7 @@
 
 enum fswc_options {
 	OPT_VERSION = 128,
+	OPT_INTERVAL,
 	OPT_PID,
 	OPT_OFFSET,
 	OPT_LIST_INPUTS,
@@ -163,7 +164,9 @@ typedef struct {
 	char *font;
 	int fontsize;
 	char shadow;
-	
+	/*Interval between taking two image*/
+	int interval;
+
 	/* Overlay options. */
 	char *underlay;
 	char *overlay;
@@ -578,9 +581,6 @@ int fswc_grab(fswebcam_config_t *config)
 			//
 			char countImageStr[20];
 			while(1){
-				if(countImages==3){
-					return;
-				}
 				countImages++;
 				/* Record the start time. */
 				config->start = time(NULL);
@@ -651,8 +651,8 @@ int fswc_grab(fswebcam_config_t *config)
 				char imgScaleName[50];
 				bzero(imgName, 50);
 				bzero(imgScaleName, 50);
-				//strcat(imgName, "/mnt/toshibausb/img");
-				strcat(imgName, "img");
+				strcat(imgName, "/mnt/toshibausb/img");
+				//strcat(imgName, "img");
 				strcat(imgName, countImageStr);
 				strcat(imgName, ".jpg");
 				strcat(imgScaleName, "scaleImg");
@@ -660,7 +660,7 @@ int fswc_grab(fswebcam_config_t *config)
 				strcat(imgScaleName, ".jpg");
 				//rotate the image
 				//image = fx_rotate(image, "180");
-				sleep(1);
+				usleep(config->interval);
 				//save file, and scale
 				fswc_output(config, imgName, image);
 				//image = fx_scale(image, "256x192");
@@ -973,6 +973,7 @@ int fswc_usage()
 	       "     --deinterlace            Reduces interlace artifacts.\n"
 	       "     --invert                 Inverts the images colours.\n"
 	       "     --greyscale              Removes colour from the image.\n"
+		   " --interval <number>      Time between taking two images."
 	       "     --swapchannels <c1c2>    Swap channels c1 and c2.\n"
 	       "     --no-banner              Hides the banner.\n"
 	       "     --top-banner             Puts the banner at the top.\n"
@@ -1013,6 +1014,7 @@ int fswc_getopts(fswebcam_config_t *config, int argc, char *argv[])
 		{
 			{"help",            no_argument,       0, '?'},
 			{"config",          required_argument, 0, 'c'},
+			{"interval",        required_argument,       0, OPT_INTERVAL},
 			{"quiet",           no_argument,       0, 'q'},
 			{"verbose",         no_argument,       0, 'v'},
 			{"version",         no_argument,       0, OPT_VERSION},
@@ -1121,7 +1123,7 @@ int fswc_getopts(fswebcam_config_t *config, int argc, char *argv[])
 	/* Parse the command line and any config files. */
 	while((c = fswc_getopt(&s, argc, argv)) != -1)
 	{
-		printf("%c, %d\n", c, c);
+		//printf("%c, %d\n", c, c);
 		switch(c)
 		{
 		case '?': fswc_usage(); /* Command line error. */
@@ -1199,6 +1201,12 @@ int fswc_getopts(fswebcam_config_t *config, int argc, char *argv[])
 		case OPT_SUBTITLE:
 			if(config->subtitle) free(config->subtitle);
 			config->subtitle = strdup(optarg);
+			break;
+		case OPT_INTERVAL:
+			//if(config->interval) free(config->interval);
+			printf("-----------+++++++++++++%s\n", optarg);
+			config->interval = atoi(optarg);
+			printf("-----------+++++++++++++%s\n", optarg);
 			break;
 		case OPT_TITLE:
 			if(config->title) free(config->title);
